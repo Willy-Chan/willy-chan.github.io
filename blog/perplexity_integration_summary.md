@@ -204,4 +204,5 @@ However, most people don't have to worry about this quirk because 1) the interna
 IMHO, this is a small tradeoff for all of the benefits and first-party support of using nvshmem4py.
 
 
+![tale of two device inits](perplexity_integration_summary_imgs/device_intialization_explanation.jpeg)
 
