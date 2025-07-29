@@ -1,6 +1,6 @@
-# NVSHMEM4py x Perplexity MoE Kernels
+# NVSHMEM4py x Perplexity MoE Kernel Integration (Part 1)
 
-## 📝 Overview
+## Overview
 
 This is a summary document describing the NVSHMEM4PY integration into the pplx-kernels project:
 
@@ -10,7 +10,12 @@ This is a summary document describing the NVSHMEM4PY integration into the pplx-k
   <li>Dynamic linking with NVSHMEM</li>
 </ol>
 
-## 💻 /tests/ command quick reference
+<!-- Most importantly however, this second iteration MR proposes a framework for *uniform tensor allocation* through NVSHMEM4py. Thus far Perplexity still manually calls methods like *nvshmem_malloc* through C++, but this MR proves that it's possible to do such function calls through native NVSHMEM4Py instead: the idea is that in a researcher workflow, it would be preferable to do everything through Python rather than context-switch between C++ and Python with custom bindings that might go out of date. -->
+
+<!-- Luckily, nvshmem4py supports a *.data_ptr()* method that makes it really easy to thread through a data buffer that 1) lives on the GPU and 2) is allocated through NVSHMEM and thus lives in the symmetric heap on all devices. -->
+
+
+## Running Tests (Quick Reference)
 
 <b>Running Sanity Checks (test_nvshmem.py)</b>
 
@@ -75,7 +80,7 @@ Interestingly, decreasing the number of GPUs to just 4 results in a larger perfo
 | `csrc/CMakeLists.txt`                   | 2             | 1             | 3             |
 | `csrc/core/CMakeLists.txt`              | 1             | 1             | 2             |
 
-## 📗 NVSHMEM Library
+## NVSHMEM Library
 
 See this [note on NVSHMEM Bootstrapping vs Initialization](#note-on-bootstrapping-and-initialization) if you're curious about the differences and low-level details. See [why we separate host and device initialization](#but-why-separate-host-and-device-components) as well.
 
@@ -111,7 +116,7 @@ target_link_libraries(pplx_kernels PUBLIC
 )
 ```
 
-## 🔌 Integration Points
+## Integration Points
 
 <!-- ### NEED TO EXPLAIN THE FULL TRACE OF ALL 5 FILES SO THEY CAN SEE EXACTLY WHAT I CHANGED: NEED TO ADD A PICTURE SHOWING THE FULL TRACED OUT STACK -->
 
@@ -169,8 +174,34 @@ target_link_libraries(all_to_all_intranode_lib INTERFACE
 
 Note that this is all done by the <u>host</u> via an existing networking protocol like MPI/Sockets/whatever. The end goal is for GPUs to be able to send data to one another, but in order to do this the host needs to establish these basic handshakes and information-exchanges.
 
-If bootstrapping is like scaffolding, **initialization** is the actual laying of the train lines. It's what enables a program like NVSHMEM to actually work: it handles setting up all of the objects/datastructures in device memory to establish a symmetric heap, coordinate shared memory, potentially setup NVLink Sharp, etc.
+If bootstrapping is like scaffolding, **initialization** is the actual laying of the train lines. It's what enables a program like NVSHMEM to actually work: it handles setting up all of the objects/data structures in device memory to establish a symmetric heap, coordinate shared memory, potentially setup NVLink Sharp, etc.
 
-## But Why Separate Host and Device Components?
+## What are the Separate Host and Device Components?
 
-TODO: The static device library is stateless and contains only function implementations. By statically linking the device library, we avoid having two separate NVSHMEM runtimes trying to manage the same resources, and applications can JIT-link their own CUDA modules with NVSHMEM device functions without runtime conflicts. (NEED TO EXPLAIN THIS MORE)
+First of all, why separate them in the first place? TLDR this allows for better context separation (host vs. device), more flexible linking strategies, independent versioning between the two, a smaller library footprint overall, and a bunch more... 
+
+Fundamentally NVSHMEM is split into *three distinct components* that serve different purposes: 
+
+1. **libnvshmem_host.so** runs on the CPU and handles host-side API calls, initialization, memory management, etc. (nvshmem_init(), nvshmem_malloc(), nvshmem_barrier())
+2. **libnvshmem_device.a** runs on the GPU and handles device-side functions called from CUDA kernels (nvshmemx_putmem_signal_nbi_warp(), etc.). The static device library is stateless and contains only function implementations. By statically linking the device library applications can JIT-link their own CUDA modules with NVSHMEM device functions without runtime conflicts. (JIT linking happens when CUDA kernels are compiled and linked at runtime: applications can cuModuleLoad their own custom .cubin kernels because NVSHMEM device functions are already statically linked into the app. Otherwise your custom kernels wouldn't know where teh NVSHMEM functions are!)
+3. **libnvshmem_bootstrap_*.so** runs on the CPU and establishes the startup transport for bootstrapping mentioned previously.
+
+Multiple processes can reference the same **libnvshmem_host.so** no problem with dynamic linking. **libnvshmem_device.a** on the other hand needs to be statically linked/directly embedded into the special library that you're developing (in this case it is directly embedded into the final **pplx_kernels.so**).
+
+## Why do we have multiple Device Initializations? Do we need to worry?
+The answer to the second question is thankfully no.
+
+The answer to the first question is nuanced (and required quite a bit of investigation on my part):
+
+The application (e.g. benchmark) can take two paths: it can either call NVSHMEM4Py or a method that originates from the pplx_kernels library. There are no issues with regards to host-side initialization: remember that **libnvshmem_host.so** is dynamically linked in both cases.
+
+The tricky thing is device-side initialization, which fundamentally takes place in **libnvshmem_device.a**. Again, the application can do something like allocate a tensor in NVSHMEM4Py (nvshmem.core.interop.tensor()). This will immediately trigger a device-side initialization from NVSHMEM4Py: this sets up a device state and objects in GPU memory to prepare it for NVSHMEM operations. 
+
+However, when the MoE application also calls a method in the pplx_kernels library, **because libpplx.so is statically linked against its own copy of libnvshmem_device.a it must also be initalized**. Thus you need an extra *nvshmem_init()* call within your custom C API. So there are two device initializations in this case: one for NVSHMEM4Py and one for the custom C++ application.
+
+However, most people don't have to worry about this quirk because 1) the internal data structure on the GPU uses const pointers that stay consistent, 2) there is low memory overhead from these initializations, and 3) there are no major performance implications.
+
+IMHO, this is a small tradeoff for all of the benefits and first-party support of using nvshmem4py.
+
+
+
