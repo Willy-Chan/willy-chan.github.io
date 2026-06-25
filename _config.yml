@@ -1,0 +1,6 @@
+title: willychan.github.io
+description: Simple personal site
+
+collections:
+  projects:
+    output: false

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ page.title }} | {{ site.title }}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; max-width: 680px; margin: 2rem auto; padding: 0 1rem; line-height: 1.6; color: #333; }
+    .intro { display: flex; gap: 1.5rem; align-items: flex-start; }
+    .intro img { width: 180px; border-radius: 8px; flex-shrink: 0; object-fit: cover; }
+    .intro-body { min-width: 0; }
+    .intro-body p:first-child { margin-top: 0; }
+    @media (max-width: 520px) {
+      .intro { flex-direction: column; align-items: center; }
+      .intro img { width: 160px; }
+    }
+    nav { margin-bottom: 2rem; padding-bottom: 1rem; border-bottom: 1px solid #eee; }
+    nav a { margin-right: 1rem; color: #0066cc; text-decoration: none; }
+    nav a:hover { text-decoration: underline; }
+    h1 { font-size: 1.5rem; }
+    ul { padding-left: 1.25rem; }
+    a { color: #0066cc; }
+    .project-box { display: flex; gap: 1rem; margin-bottom: 1.5rem; padding: 1rem; border: 1px solid #eee; border-radius: 8px; }
+    .project-box img { width: 80px; height: 80px; object-fit: cover; border-radius: 6px; flex-shrink: 0; }
+    .project-box .body { min-width: 0; }
+    .project-box .title { font-size: 1.15rem; font-weight: 600; margin: 0 0 0.25rem 0; }
+    .project-box .title a { color: inherit; text-decoration: none; }
+    .project-box .title a:hover { color: #0066cc; text-decoration: underline; }
+    .project-box .description { font-size: 0.9rem; color: #555; margin: 0 0 0.5rem 0; }
+    .project-box .recognition { font-size: 0.85rem; color: #666; margin: 0; }
+    .project-box .project-links { font-size: 0.85rem; color: #666; margin: 0.5rem 0 0; }
+    .project-box .project-links summary { cursor: pointer; color: #0066cc; user-select: none; }
+    .project-box .project-links summary:hover { text-decoration: underline; }
+    .project-box .project-links ul { margin: 0.35rem 0 0; padding-left: 1.25rem; }
+    .project-box .project-links li { margin: 0.2rem 0; }
+    footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid #eee; font-size: 0.9rem; color: #666; }
+    footer a { margin-right: 1rem; }
+    article.post { margin-bottom: 2rem; }
+    article.post h1 { margin-bottom: 0.25rem; }
+    article.post h2 { font-size: 1.35rem; margin-top: 2rem; margin-bottom: 0.75rem; }
+    article.post h3 { font-size: 1.15rem; margin-top: 1.75rem; margin-bottom: 0.5rem; }
+    article.post h4 { font-size: 1rem; margin-top: 1.25rem; margin-bottom: 0.5rem; }
+    article.post p, article.post ul, article.post ol { margin: 0.75rem 0; }
+    article.post li { margin: 0.35rem 0; }
+    article.post li > ul, article.post li > ol { margin: 0.35rem 0; }
+    article.post hr { border: none; border-top: 1px solid #eee; margin: 2rem 0; }
+    article.post img { max-width: 100%; height: auto; border-radius: 6px; margin: 1rem 0; }
+    article.post code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; background: #f6f8fa; padding: 0.15em 0.35em; border-radius: 4px; }
+    article.post pre { background: #f6f8fa; padding: 1rem; border-radius: 8px; overflow-x: auto; margin: 1rem 0; line-height: 1.45; }
+    article.post pre code { background: none; padding: 0; font-size: 0.85rem; }
+    article.post .highlight { background: #f6f8fa; border-radius: 8px; }
+    article.post .highlight pre { margin: 0; background: transparent; }
+    article.post blockquote { margin: 1rem 0; padding: 0.75rem 1rem; border-left: 3px solid #ddd; color: #555; background: #fafafa; border-radius: 0 6px 6px 0; }
+    article.post .table-caption { font-size: 0.9rem; color: #555; margin: 1rem 0 0.5rem; }
+    article.post table.nccl-table { width: 100%; border-collapse: collapse; margin: 0 0 1.5rem; font-size: 0.9rem; }
+    article.post table.nccl-table th,
+    article.post table.nccl-table td { border: 1px solid #ddd; padding: 0.65rem 0.75rem; vertical-align: top; text-align: left; }
+    article.post table.nccl-table thead th { background: #f6f8fa; font-weight: 600; }
+    article.post table.nccl-table tbody th { background: #fafafa; font-weight: 600; width: 28%; }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="/">Home</a>
+    <a href="/projects.html">Projects</a>
+    <a href="/blog.html">Blog</a>
+  </nav>
+  {{ content }}
+  <footer>
+    <a href="https://x.com/opengroundsFX">Twitter/x</a>
+    <a href="https://www.linkedin.com/in/willy-c">LinkedIn</a>
+    <a href="https://github.com/Willy-Chan">GitHub</a>
+    <a href="https://scholar.google.com/citations?user=rYJWlzYAAAAJ&hl=en&authuser=2">Google Scholar</a>
+  </footer>
+</body>
+</html>

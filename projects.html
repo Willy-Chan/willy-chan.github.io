@@ -1,0 +1,35 @@
+---
+layout: default
+title: Projects
+---
+
+<h1>Projects</h1>
+
+{% for project in site.projects %}
+<div class="project-box">
+  {% if project.image %}
+  <img src="{{ project.image }}" alt="">
+  {% endif %}
+  <div class="body">
+    <p class="title">{% if project.link %}<a href="{{ project.link }}">{{ project.title }}</a>{% else %}{{ project.title }}{% endif %}</p>
+    <p class="description">{{ project.description }}</p>
+    {% if project.recognition and project.recognition.size > 0 %}
+    <ul class="recognition">
+      {% for item in project.recognition %}
+      <li>{% if item.url %}<a href="{{ item.url }}">{{ item.label }}</a>{% else %}{{ item }}{% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% if project.links and project.links.size > 0 %}
+    <details class="project-links">
+      <summary>Links</summary>
+      <ul>
+        {% for item in project.links %}
+        <li><a href="{{ item.url }}">{{ item.label }}</a></li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
