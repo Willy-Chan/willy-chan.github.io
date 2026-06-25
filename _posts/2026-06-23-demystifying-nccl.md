@@ -4,6 +4,8 @@
 
 title: NCCL Paper Reading Notes
 
+---
+
 I'm starting a collection of notes related to [NCCL](https://github.com/nvidia/nccl) that are derived from the wonderful papers put out by the GPU Networking team at NVIDIA. **NOTE:** These are abridged notes that are not necessarily the most readable! They're mostly meant to just help me get my thoughts down - I'll do a follow-up where I turn them into a more readable blog format.
 
 ## [Demystifying NCCL](https://arxiv.org/abs/2507.04786)
