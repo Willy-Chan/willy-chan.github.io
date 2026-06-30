@@ -18,6 +18,4 @@ I do something similar with music. I keep playlists of everything I've listened 
 
 Documentation, nostalgia, the way history seems to rhyme with itself — all of it feels deeply meaningful to me. The last thing I want, decades from now, is to have lived interesting moments and let them fade.
 
-I've tried to commit to writing before and haven't always followed through. This time I'm setting a modest bar: at least one post per month, a brain dump of reflections and lessons from whatever happened that month. Maybe I'll even start gathering training data for the wisdom I accumulate over time.
-
-For this month, the big event is of course graduating from Stanford.
+Excited to see where this goes!
