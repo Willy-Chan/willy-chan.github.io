@@ -1,0 +1,79 @@
+---
+layout: default
+title: Art
+---
+
+<h1>Art</h1>
+
+<style>
+  .art-gallery {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.25rem;
+    margin-top: 2rem;
+  }
+  .art-gallery img {
+    max-width: 100%;
+    max-height: 70vh;
+    border-radius: 8px;
+    object-fit: contain;
+  }
+  .art-gallery button {
+    font: inherit;
+    padding: 0.5rem 1rem;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    background: #fff;
+    color: #333;
+    cursor: pointer;
+  }
+  .art-gallery button:hover {
+    border-color: #0066cc;
+    color: #0066cc;
+  }
+  .art-empty {
+    color: #666;
+    text-align: center;
+    margin-top: 2rem;
+  }
+</style>
+
+{% assign art_count = 0 %}
+{% assign art_files = site.static_files | where_exp: "file", "file.path contains '/myart/'" %}
+{% for file in art_files %}
+  {% assign ext = file.extname | downcase %}
+  {% if ext == ".jpg" or ext == ".jpeg" or ext == ".png" or ext == ".gif" or ext == ".webp" %}
+    {% assign art_count = art_count | plus: 1 %}
+  {% endif %}
+{% endfor %}
+
+{% if art_count > 0 %}
+<div class="art-gallery">
+  <img id="art-image" src="" alt="Art">
+  <button type="button" id="art-next">⏭️</button>
+</div>
+
+<script>
+  const artImages = [
+    {% for file in art_files %}
+      {% assign ext = file.extname | downcase %}
+      {% if ext == ".jpg" or ext == ".jpeg" or ext == ".png" or ext == ".gif" or ext == ".webp" %}
+    "{{ file.path }}",
+      {% endif %}
+    {% endfor %}
+  ];
+
+  const img = document.getElementById("art-image");
+  const btn = document.getElementById("art-next");
+
+  function showRandomArt() {
+    img.src = artImages[Math.floor(Math.random() * artImages.length)];
+  }
+
+  showRandomArt();
+  btn.addEventListener("click", showRandomArt);
+</script>
+{% else %}
+<p class="art-empty">Error retrieving art.</p>
+{% endif %}
