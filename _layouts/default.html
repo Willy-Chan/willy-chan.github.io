@@ -64,6 +64,14 @@
     article.post .post-pdf-header a { font-size: 0.9rem; white-space: nowrap; }
     article.post .post-pdf-frame { width: 100%; height: 70vh; min-height: 420px; border: 1px solid #eee; border-radius: 8px; background: #fafafa; }
   </style>
+  {% if page.math %}
+  <script>
+    MathJax = {
+      tex: { inlineMath: [['\\(', '\\)'], ['$', '$']], displayMath: [['\\[', '\\]'], ['$$', '$$']] }
+    };
+  </script>
+  <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+  {% endif %}
 </head>
 <body>
   <nav>
