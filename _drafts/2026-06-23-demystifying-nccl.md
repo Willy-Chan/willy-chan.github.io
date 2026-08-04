@@ -324,7 +324,7 @@ NCCL INFO Using protocol Simple  <-- [Confirms your manual choice is active]
 
 ---
 
-### Transport Layer (i.e. Hardware)
+# Transport Layer (i.e. Hardware)
 
 **Table II:** NCCL Communication Characteristics and Transports
 
@@ -400,35 +400,56 @@ Note on **CPU Proxy Thread**: The CPU proxy does NOT move data, it's basically j
 
 ---
 
-### NCCL's Collective Algorithms
+# NCCL's Collective Algorithms
 
-> **TODO:** Review Section V-D — explains how NCCL kernels work exactly!
+There are **six core algorithms** that NCCL supports: 
+| Algorithm      | Core Idea                                                                                                         | Where it Helps                                   |
+| -------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| Ring           | GPUs arranged in a logical ring; data is pipelined around the ring                                                | Maximum bandwidth, large messages                |
+| Tree           | Hierarchical reduce + broadcast tree                                                                              | Low latency, small messages                      |
+| CollNet Direct | Hierarchical collective where GPUs communicate through a network collective engine (e.g., SHARP)                  | Multi-node systems with SHARP-capable networks   |
+| CollNet Chain  | Hierarchical collective where GPUs are arranged as chains within nodes and use network acceleration between nodes | Multi-node systems, bandwidth-oriented transfers |
+| NVLS           | Uses NVSwitch/NVLink SHARP hardware to perform collective operations inside a node                                | NVSwitch-based multi-GPU systems                 |
+| NVLS Tree      | Tree-style algorithm accelerated by NVLS hardware                                                                 | NVSwitch systems requiring lower latency         |
 
-- Different topologies:
-  - Ring Topology: Send data to neighbors only
-  - Tree Topology: look at who is my parent/child and communicate via a tree.
-  - Double Binary Tree
-- Choice of algorithm (i.e. ring vs. tree) depends on:
-  - Collective
-  - Message Size
-  - Topology
-- Algorithms for doing collectives  (??? review what all these look like):
-  - Ring
-  - Tree
-  - CollNet Direct (SHARP network compute available)
-    - A2A comms within node????
-  - CollNet Chain
-    - Linear GPUs??? Reductions up the chain and broadcasts down
-  - NVLS (NVSwitch systems w/ SHARP)
-  - NVLS Tree (?????)
-  - PAT (new, but low adoption)
-- Collectives are composed from low-level comm primitives. **THESE ARE AFFECTED BY PROTOCOL**
+Ring and Tree are software algorithms (general purpose)
+CollNet (internode sharp) and NVLS (intranode sharp) are separate algorithm families that account for special hardware that lets you do reductions in the network switch.
+
+
+Ring == high bandwidth, large messages
+Tree == low latency, small messages.
+
+
+AllReduce, BCast, Reduce, ReduceScatter, AllGather
+Simple, LL, Ll128
+Ring / Tree / CollNet Direct / CollNet Chain
+
+## Primitivies
+- These high level collectives are composed of low-level primtives (allows for flexibility):
+
+send, recv, recvReduceSend, recvCopySend, recvReduceCopySend.
+- Syncing, buffer management, transfer granularity vary depending on the protocol (simple/LL/LL128)
+
+NCCL kernels are launched with a grid: (nChannels, 1, 1). nChannels is the number of active communication channles for the operation.
+- blockIdx.x corresponds to exactly ONE communication channel!
+- Within a block NCCL uses MIN to MAX_NTHREADS. plan->threadPerBlock says the number of threads used in a blcok.
+- Mapping from blockIdx.x -> channel ID
+- Warp specialization: warp 0 does communicator metadata, warp 1 loads channel-specific data. Rest of the warps do communication/computation
+- threads in those comm/comp warps are carefully coordinated to not diverge: they do send/reduce/copy
+
+
+NonPipelined: Ring AllReduce, Ring AllGather, Ring ReduceScatter (each GPU must complete all tasks in one iteration)
+- Example Ring AllReduce: implement reduceScatter with send/recvReduce primitives, then do an allgather with same primitives.
+- Ring algorithms.... with own analysis of each of those algorithms at a high level!
+
+
+Pipelined: Tree AllReduce, Ring Broadcast, Ring Reduce
+
+Low-level comm primitives. **THESE ARE AFFECTED BY PROTOCOL**
   - send
   - recv
   - recvReduceSend: recv, reduce on local buffer, send to next
   - recvCopySend
   - recvReduceCopySend
 - Data is split independently by channel/block/SM:
-
->
 
