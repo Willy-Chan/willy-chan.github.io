@@ -53,11 +53,15 @@
     article.post .highlight pre { margin: 0; background: transparent; }
     article.post blockquote { margin: 1rem 0; padding: 0.75rem 1rem; border-left: 3px solid #ddd; color: #555; background: #fafafa; border-radius: 0 6px 6px 0; }
     article.post .table-caption { font-size: 0.9rem; color: #555; margin: 1rem 0 0.5rem; }
-    article.post table.nccl-table { width: 100%; border-collapse: collapse; margin: 0 0 1.5rem; font-size: 0.9rem; }
-    article.post table.nccl-table th,
-    article.post table.nccl-table td { border: 1px solid #ddd; padding: 0.65rem 0.75rem; vertical-align: top; text-align: left; }
-    article.post table.nccl-table thead th { background: #f6f8fa; font-weight: 600; }
-    article.post table.nccl-table tbody th { background: #fafafa; font-weight: 600; width: 28%; }
+    article.post table { width: 100%; border-collapse: collapse; margin: 0 0 1.5rem; font-size: 0.9rem; }
+    article.post table th,
+    article.post table td { border: 1px solid #ddd; padding: 0.65rem 0.75rem; vertical-align: top; text-align: left; }
+    article.post table thead th { background: #f6f8fa; font-weight: 600; }
+    article.post table tbody th { background: #fafafa; font-weight: 600; width: 28%; }
+    article.post #markdown-toc { background: #fafafa; border: 1px solid #eee; border-radius: 8px; padding: 0.75rem 1rem 0.75rem 0.5rem; margin: 1rem 0 1.5rem; font-size: 0.95rem; }
+    article.post #markdown-toc ul { margin: 0.25rem 0; padding-left: 1.25rem; }
+    article.post #markdown-toc > li { margin: 0.35rem 0; }
+    article.post .mermaid { margin: 1.5rem 0; overflow-x: auto; text-align: center; }
     article.post .post-pdf { margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid #eee; }
     article.post .post-pdf-header { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 0.75rem; }
     article.post .post-pdf-header h2 { margin: 0; font-size: 1.15rem; }
@@ -72,6 +76,21 @@
   </script>
   <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
   {% endif %}
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      document.querySelectorAll('pre code.language-mermaid').forEach(function (block) {
+        var pre = block.parentElement;
+        var div = document.createElement('div');
+        div.className = 'mermaid';
+        div.textContent = block.textContent;
+        pre.replaceWith(div);
+      });
+      if (window.mermaid) {
+        mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'loose' });
+      }
+    });
+  </script>
 </head>
 <body>
   <nav>
