@@ -1,48 +1,71 @@
 ---
-
-## layout: post
-
-title: NCCL Paper Reading Notes
-
+layout: post
+title: Demystifying NCCL
+math: true
 ---
 
-I'm starting a collection of notes related to [NCCL](https://github.com/nvidia/nccl) that are derived from the wonderful papers put out by the GPU Networking team at NVIDIA. **NOTE:** These are abridged notes that are not necessarily the most readable! They're mostly meant to just help me get my thoughts down - I'll do a follow-up where I turn them into a more readable blog format.
+Starting a series of posts where I turn my existing notes on [NCCL](https://github.com/nvidia/nccl) into blog format. I'm relatively new to technical writing like this, so if you have feedback please feel free to shoot me an email at <u>willychan2022@gmail.com</u>.
 
-## [Demystifying NCCL](https://arxiv.org/abs/2507.04786)
+This post is a blog-formatting of my notes on the [Demystifying NCCL paper](https://arxiv.org/abs/2507.04786), published by NVIDIA's networking team.
 
-- NCCL is open source + has documented API, but the internal design is unclear.
-- This paper goes over:
-  - Overview of the API
-  - 3 modes (simple, LL, LL128)
-  - Intra vs. Inter node data movement
-  - Communication Algorithms (ring vs. tree)
+# Demystifying NCCL
 
----
+**TLDR** NCCL is fully open source and the API is documented, but the internal design is unclear. This paper goes over (1) an overview of the API, (2) the 3 modes (simple, LL, LL128), (3) intra vs. internode data movement, (4) communication algorithms (e.g. ring vs. tree).
 
-### NCCL overview
+## Overview of the NCCL API
 
-NCCL is just MPI but for GPU-to-GPU interactions. The communication happens over NVLink, PCIe, or Infiniband/RoCE.
+NCCL is a lot like MPI, but specializes in GPU-to-GPU interactions. The communication happens over NVLink, PCIe, or Infiniband/RoCE.
 
-Note that each collective in NCCL requires an **algorithm** (path the data takes) paired with a **protocol** (how data chunks are packaged exactly).
+### The 4 Types of NCCL Functions
 
-#### The 4 kinds of NCCL functions
+- **Communicator Management**: Each participating GPU has a local `ncclComm_t` handle representing its endpoint in a communicator.
+  - `ncclCommInitAll` for 1 process controlling all GPUs.
+  - `ncclCommInitRank` for N processes for each of the N GPUs.
+  - `ncclComm_t` is an **object** representing one GPU in one communicator: all of the communicator handles collectively represent one NCCL "communicator". You should use `ncclCommDestroy` and `ncclCommAbort` to cleanup these objects eventually.
 
-- **Communicator Management**: each GPU should define a communicator object, then call NCCL ops using said object.
-  - `ncclCommInitAll` for 1 thread / all GPUs
-  - `ncclCommInitRank` for 1 thread or process / 1 GPU
-  - `ncclComm_t` is an **object** that takes resources. You should use `ncclCommDestroy` and `ncclCommAbort` to cleanup / cancel all operations respectively.
-
+`ncclCommInitAll`: One process owns communicator handles for every GPU. To launch a collective, the application typically loops over the GPUs and issues one NCCL call per GPU.
 ```cpp
-// CASE 1: Single thread owns all GPUs
+// CASE 1: we run ONE process that is designed to control every rank. This single process runs the following:
 ncclComm_t comms[ngpus];
-ncclCommInitAll(comms, ngpus, NULL);  // comms[i] bound to GPU i. Creates the object for everyone.
+ncclCommInitAll(comms, ngpus, NULL);  // comms[i] is the communicator handle for GPU i. This single process owns all 4 communicator handles.
 
-// CASE 2: Multi-process / multi-thread: each rank creates its own comm
+// To launch a collective op for all N GPUs, this single process calls the op like so:
+ncclGroupStart();
+
+for (int i = 0; i < 4; i++) {
+    cudaSetDevice(i);
+    ncclAllReduce(send[i], recv[i], count, ncclFloat, ncclSum,
+                  comms[i],
+                  streams[i]);
+}
+
+ncclGroupEnd();  // prevents blocking: GPU 0 will call allReduce, but then get stuck waiting for this process to call allReduce for GPU 1, which it cannot do since GPU 0 is still waiting. The group tells NCCL to call all 4 allReduces all at once. Grouping is mainly useful when one thread is issuing all NCCL operations.
+```
+`ncclCommInitRank`: one process generates a `ncclUniqueId`, broadcasts it to all participating processes, and every process calls `ncclCommInitRank(...)` with the same ID and its own rank.
+```cpp
+// CASE 2: we run N processes, with each rank meant to launch NCCL ops for 1 of our ranks. Each individual process runs the following:
 ncclUniqueId uid;
-if (rank == 0) ncclGetUniqueId(&uid);
-// broadcast uid to all ranks (MPI_Bcast, shared memory, etc.)
 ncclComm_t comm;
-ncclCommInitRank(&comm, nranks, uid, rank);   // each rank creates own ncclComm_t object.
+if (rank == 0) ncclGetUniqueId(&uid); 
+// *broadcast uid to all ranks (MPI_Bcast, shared memory, etc.)*    <-- we need a UID to tell us who is in the communicator group! It's like the meeting ID.
+ncclCommInitRank(&comm, nranks, uid, rank);
+
+// Now each process has exactly one communicator handle:
+// Process 0
+//     comm  <-- GPU0
+
+// Process 1
+//     comm  <-- GPU1
+
+// Process 2
+//     comm  <-- GPU2
+
+// Process 3
+//     comm  <-- GPU3
+
+
+// To launch a collective:
+ncclAllReduce(..., comm, stream);   // every process MUST CALL THE SAME FUNCTION using its own communicator handle.
 
 // Cleanup
 ncclCommDestroy(comm);  // graceful: wait for in-flight ops to finish
@@ -54,6 +77,8 @@ ncclCommAbort(comm);    // immediate: cancel everything (e.g. on error)
   - ncclAllGather
   - ncclReduceScatter
   - ncclReduce + ncclAllReduce
+
+> Note that each collective in NCCL requires an **algorithm** (path the data takes) paired with a **protocol** (how data chunks are packaged exactly).
 
 ```cpp
 // Broadcast: root rank sends its buffer to every other rank
@@ -84,94 +109,39 @@ ncclRecv(recvbuff, count, ncclFloat, /*src=*/0, comm, stream);
 ```
 
 - **Group Operations**:
-  - Inefficient to run the same (op1 + op2 + op3)
-  - You can use `ncclGroupStart` + `ncclGroupEnd`.
-    - Defines a "group" of (specific send/recv calls) or (collectives)
-      - Makes sure this is a **single NCCL launch**: reduces launch overhead + latency a lot!!!
+  - Batch multiple NCCL API calls into a single submission phase.
+  - NCCL records the operations between `GroupStart()` and `GroupEnd()`.
+  - At `GroupEnd()`, NCCL issues the queued operations together.
+  - Mostly used when one thread controls multiple GPUs (to avoid deadlock and coordinate collectives)
 
-```cpp
-// Bad: each call = separate kernel launch (3x overhead)
-ncclAllReduce(a, a_out, n, ncclFloat, ncclSum, comm, stream);
-ncclAllReduce(b, b_out, n, ncclFloat, ncclSum, comm, stream);
-ncclAllReduce(c, c_out, n, ncclFloat, ncclSum, comm, stream);
+Without grouping:
+```
+GPU0 launch
+(waiting...)
 
-// Good: batched into one NCCL launch
-ncclGroupStart();
-ncclAllReduce(a, a_out, n, ncclFloat, ncclSum, comm, stream);
-ncclAllReduce(b, b_out, n, ncclFloat, ncclSum, comm, stream);
-ncclAllReduce(c, c_out, n, ncclFloat, ncclSum, comm, stream);
-ncclGroupEnd();
+GPU1 launch
 
-// Works for mixed P2P too — NCCL can schedule sends/recvs in parallel
-ncclGroupStart();
-if (rank == 0) ncclSend(grad0, n, ncclFloat, 1, comm, stream);
-if (rank == 1) ncclRecv(grad0, n, ncclFloat, 0, comm, stream);
-if (rank == 1) ncclSend(grad1, n, ncclFloat, 2, comm, stream);
-if (rank == 2) ncclRecv(grad1, n, ncclFloat, 1, comm, stream);
-ncclGroupEnd();
+GPU2 launch
 ```
 
-#### 3 Ways to launch NCCL operations
-
-- 1 CPU process / 1 GPU: each GPU has its own seperate process.
-  - CPU can be scheduled on a local **NUMA domain**, which means better data locality and memory latency. Basically, for max performance, make sure you **force the CPU process to run on the CPU core(s) physically closest to that GPU**.
-    - Basically, there's less distance between the CPU and corresponding GPU: data doesn't have to go through the slow interconnect between CPU sockets.
-
+Grouping lets NCCL see all the allreduces at the very beginning:
 ```cpp
-// Launch N processes (e.g. mpirun -np 4 ./train)
-int rank, nranks;
-MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-MPI_Comm_size(MPI_COMM_WORLD, &nranks);
+ncclGroupStart();
 
-cudaSetDevice(rank);  // KEY: process 0 -> GPU 0, process 1 -> GPU 1, ...
-
-ncclUniqueId uid;
-if (rank == 0) ncclGetUniqueId(&uid);
-MPI_Bcast(&uid, sizeof(uid), MPI_BYTE, 0, MPI_COMM_WORLD);
-
-ncclComm_t comm;
-ncclCommInitRank(&comm, nranks, uid, rank);
-
-ncclAllReduce(sendbuff, recvbuff, count, ncclFloat, ncclSum, comm, stream);
-ncclCommDestroy(comm);
-```
-
-- 1 CPU thread / 1 GPU: Single CPU Process, uses multiple threads to manage each GPU
-  - Efficient intra-process memory sharing!!!
-  - Lets you have **direct access to memory across ranks**:  GPU-GPU direct memory access! Less memcpy overhead
-
-```cpp
-// One process, one thread per GPU
-ncclComm_t comms[ngpus];
-cudaStream_t streams[ngpus];
-ncclUniqueId uid;
-ncclGetUniqueId(&uid);
-
-void* worker(void* arg) {
-int rank = *(int*)arg;
-cudaSetDevice(rank);      // assigns a specific GPU to the CURRENT CPU thread
-cudaStreamCreate(&streams[rank]);
-ncclCommInitRank(&comms[rank], ngpus, uid, rank);
-
-ncclAllReduce(sendbuff, recvbuff, count, ncclFloat, ncclSum,
-comms[rank], streams[rank]);
-return NULL;
-}
-
-pthread_t threads[ngpus];
-int ranks[ngpus];
 for (int i = 0; i < ngpus; i++) {
-ranks[i] = i;
-pthread_create(&threads[i], NULL, worker, &ranks[i]);
+    cudaSetDevice(i);
+    ncclAllReduce(..., comms[i], streams[i]);
 }
-for (int i = 0; i < ngpus; i++) pthread_join(threads[i], NULL);
+
+ncclGroupEnd();
 ```
 
-- 1 CPU thread / N GPUs: single thread launches multiple kernels
-  - Sequential kernel launches, Less concurrency (launching kernels on ALL my GPUs in parallel)
+### 3 Common Ways to launch NCCL operations
+
+- 1 CPU thread / N GPUs: single thread launches kernels on each rank
   - Super simple, less CPU overhead, deterministic execution
   - Good for small projects since it's very easy to use, very deterministic!
-  - Just need to launch a few kernels, then the overhead of the kernel launches can basically be hidden!
+  - **Just need to launch a few kernels, then the overhead of the kernel launches can basically be hidden!**
 
 ```cpp
 // One process, one thread, all GPUs — simplest setup
@@ -181,16 +151,79 @@ cudaStream_t streams[ngpus];
 
 ncclCommInitAll(comms, ngpus, NULL);  // comms[i] on GPU i, no UID needed
 
-for (int i = 0; i < ngpus; i++) {
-cudaSetDevice(i);    // current thread starts targeting GPU i
-cudaStreamCreate(&streams[i]);
-ncclAllReduce(sendbuff, recvbuff, count, ncclFloat, ncclSum,
-comms[i], streams[i]);  // launched one after another
+ncclGroupStart();
+
+for (...) {
+    ...
+    ncclAllReduce(...);
 }
-for (int i = 0; i < ngpus; i++) cudaStreamSynchronize(streams[i]);
+
+ncclGroupEnd();
 ```
 
-#### Communication via Channels (note that Channels === CUDA Blocks === SMs)
+
+- 1 CPU process / 1 GPU: each GPU has its own seperate process.
+  - CPU can be scheduled on a local **NUMA domain**, which means better data locality and memory latency. Basically, for best performance, make sure you **force the CPU process to run on the CPU core(s) physically closest to that GPU**.
+    - Basically, there's less distance between the CPU and corresponding GPU: launch data doesn't have to go through the slow interconnect between CPU sockets.
+
+```cpp
+// Launch N processes (e.g. mpirun -np 4 ./train)
+int rank, nranks;
+MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+MPI_Comm_size(MPI_COMM_WORLD, &nranks);
+
+cudaSetDevice(rank);
+
+ncclUniqueId uid;
+if (rank == 0) ncclGetUniqueId(&uid);                                         // every rank has the same meeting uid
+MPI_Bcast(&uid, sizeof(uid), MPI_BYTE, 0, MPI_COMM_WORLD);
+
+ncclComm_t comm;
+ncclCommInitRank(&comm, nranks, uid, rank);                                   // ncclCommInitRank call on each rank
+
+ncclAllReduce(sendbuff, recvbuff, count, ncclFloat, ncclSum, comm, stream);   // every rank simultaneously calls the collective
+ncclCommDestroy(comm);
+```
+
+- 1 process with multiple CPU threads, then 1 CPU thread / 1 GPU: Single CPU Process, uses multiple threads to manage each GPU
+  - One process creates one worker thread per GPU.
+  - Threads share the same address space, making CPU-side coordination simpler.
+  - Avoids MPI while still allowing one thread to manage each GPU independently.
+  - Can issue NCCL operations concurrently from different CPU threads
+
+```cpp
+// Here, I assume we have 1 process with N threads. Each of the N threads controls 1 GPU, so all N GPUs are controlled by N threads.
+ncclComm_t comms[ngpus];
+cudaStream_t streams[ngpus];
+ncclUniqueId uid;
+ncclGetUniqueId(&uid);      // we still need a UID here: each thread needs to "rendezvous" into the same communicator group.
+
+// What each individual thread will be running:
+void* worker(void* arg) {
+  int rank = *(int*)arg;
+  cudaSetDevice(rank);
+  cudaStreamCreate(&streams[rank]);
+  ncclCommInitRank(&comms[rank], ngpus, uid, rank);           // each thread is treated like a process: they call ncclCommInitThread and then the respective collective.
+
+  ncclAllReduce(sendbuff, recvbuff, count, ncclFloat, ncclSum,
+  comms[rank], streams[rank]);
+  return NULL;
+}
+
+// Loop through and create N threads. These N threads execute the worker() code above, then complete and join at the end.
+pthread_t threads[ngpus];
+int ranks[ngpus];
+for (int i = 0; i < ngpus; i++) {
+  ranks[i] = i;
+  pthread_create(&threads[i], NULL, worker, &ranks[i]);
+}
+for (int i = 0; i < ngpus; i++) pthread_join(threads[i], NULL);
+```
+
+# The 3 Communication Protocols (i.e. bandwidth v latency tradeoff)
+## (0) Overview of NCCL's Communication Kernels
+
+> IMPORTANT: Channel === CUDA ThreadBlock ==scheduled=to== 1 SM's worth of work.
 
 - NCCL basically just **launches threadblocks on SMs that only do communication.** Each collective decomposes the data into "communication channels" which are just CUDA blocks. Each block runs on its own SM and handles an independent part of the work.
 - NCCL Communication is between 3 things: GPU, CPU, NIC.
@@ -203,11 +236,10 @@ for (int i = 0; i < ngpus; i++) cudaStreamSynchronize(streams[i]);
 **Order of operations:**
 
 1. GPU finishes computation and puts data into a dedicated VRAM buffer
-2. GPU writes a tiny message into a CPU FIFO queue saying "Hey, I just finished, my data to send is in GPU memory at address 0x7f000"
-3. Proxy thread is running a fast, constant loop checking the shared CPU FIFO. The second it sees the GPU's message...
+2. GPU writes a message into a CPU FIFO queue saying "Hey, I just finished, my data to send is in GPU memory at address 0x7f000"
+3. Proxy thread is running a fast, constant loop checking/monitoring the shared CPU FIFO. The second it sees the GPU's message...
 4. Proxy thread immediately calls the network driver (IBVerbs, TCP socket, etc.), basically telling the NIC "Hey Mr. NIC, go to GPU memory address 0x7f000 and send that data over the network wire"
 5. The NIC uses GPUDirect RDMA to reach directly across the PCIe bus, grab the data from GPU memory, and stream it onto the network wire.
-  - PCIe is ~64 GB/s; NICs transfer at 400 Gb/s (50 GB/s), so there's no bottleneck.
 
 - **The Channel vs. Chunk Size Tradeoff (i.e. the "Using more SMs vs. Filling the NIC" tradeoff)**
   - Let's say you want to transfer a 4 MB tensor.
@@ -215,36 +247,40 @@ for (int i = 0; i < ngpus; i++) cudaStreamSynchronize(streams[i]);
     - If you use 16 channels, each channel/block/SM is transferring 256 KB of data
     - **Channels goes up** means **chunk_to_send goes down**.
   - Lower Channels === Higher Chunks to send
-    - Pros: Since your NIC has a fixed internal buffer size (512 KB), you ideally want to send completely full 512 KB packets. You can saturate this buffer!
-    - Cons: You have fewer thread blocks working: so there's less parallelism! The GPU is underutilized as we're waiting for a few SMs/blocks to finish.
+    - Pros: Large transfers tend to utilize the network better.
+    - Cons: You have fewer thread blocks working: i.e. less worker thread blocks preparing data to be put on the wire i.e. less parallelism! The GPU is underutilized as we're waiting for a few SMs/blocks to finish.
   - More Channels === Lower Chunks to send
-    - Pros: You're launching 16 thread blocks and using 16 SMs: more processing speed!
-    - Cons: per-block chunk size shrinks, so you're sending packets smaller than 512 KB. The proxy thread is transmitting a partially filled network buffer that harms your network throughput!
-- When you fuse P2P ops with `ncclGroupStart` and `ncclGroupEnd`, NCCL assigns each transfer to a separate block so they can theoretically run in parallel. This is *task-level parallelism*.
+    - Pros: You're launching 16 thread blocks and using 16 SMs: more GPU parallelism! There's better SM utilization.
+    - Cons: If the data chunks being sent are too small, the communication overhead reduces our overall bandwidth.
 
-### The 3 Communication Protocols (i.e. bandwidth v latency tradeoff)
 
-#### Simple
+## (1) Simple Protocol
+We split data into massive (512 KB) data chunks. Our channels/SMs each put massive chunks onto the wire.
 
-- Designed for **high bandwidth** and **large messages**, i.e. moving MASSIVE (512 KB) data chunks at once.
-- Lets you saturate NIC bandwidth with large data chunks filling the packet size!
-- But... there's an implicit **memory fence**: if the receiver **must** get 100% of the data chunk before touching the data.
-  - Overhead is huge for small messages: most time spent syncing. HIgh latency (6us latency per-hop) for small payloads.
+- Designed for **high bandwidth** and **large messages**
+- Pros: Lets you saturate NIC bandwidth with large data chunks
+- Cons: There's an implicit **memory fence**: the receiver **must** get 100% of the data chunk before touching the data. Thus, the overhead is huge for small messages: most time is spent syncing. High latency (6us latency per-hop) for small payloads.
 
-#### Low Latency
+## (2) Low Latency (LL) Protocol
+Simple has too much latency. What if we have smaller message sizes, i.e. we're <u>underutilizing</u> the bandwidth? And instead of a memory fence telling us that some massive chunk of data is available to use, we use *flag-based* synchronization?
+
+The key trick is that NCCL splits your data into [===4-byte data===, ===4-byte flag===] payloads. **The flag signals that this 4-byte tile is good to be touched by the receiver!** The **moment the receiver GPU kernel sees the flag slot filled**, it knows that data is fresh and valid. There's no waiting for a large chunk before beginning processing!
+
+Another (smaller) trick: instead of GPUDirect RDMA, we have to use an **intermediate staging buffer** in **CPU host memory**. This nukes your bandwidth! But this way the CPU proxy thread can super-quickly poll when data is ready to be sent. Polling over GPU memory and PCIe (like normal) is much slower!
 
 - Designed for **low latency** and extremely **small messages**
-- 1us latency per hop (this is done using the **flag trick!**)- Low bandwidth: overhead of sending flag payloads.
-- KEY TRICK: NCCL splits your data into (4-byte data, 4-byte flag) payloads. **The flag signals that this 4-byte tile is good to be touched by the receiver!**
-  - The **moment the receiver NIC sees the flag slot filled**, it knows that data is fresh and valid. There's no waiting for an expensive memory fence!
-- KEY TRICK 2: There's no GPUDirect RDMA. We use an **intermediate staging buffer** in **CPU host memory**. This nukes your bandwidth! But this way the CPU proxy thread can super-quickly poll when data is ready to be sent. Polling over GPU memory and PCIe (like normal) is much slower!
+- Pros: 1us latency per hop (this is done using the **flag trick!**) 
+- Cons: Low bandwidth: overhead of sending flag payloads.
 
-#### LL128
+## (3) LL128 Protocol
+Goldilocks: maybe we need something in between high-bandwidth and low-latency. How about we send chunks of [===120-byte data===, =8-byte flag=]. This is a hardware cache line!
 
-- Intermediate! We send in chunks of (120-byte data + 8-byte flag). This is a hardware cache line!
-- BUT... it has strict hardware requirements (PCIe + motherboard compatibility with 128-byte atomic writes). Disabled automatically if hardware isn't compatible to avoid data corruption.
+Note that *inter-node*, we do not do the 128-byte unit trick: we aggregate them into larger data chunks [128, 128, 128, ...] before the proxy/NIC sends them (aggregating LOTs of 128-byte units). But in *intra-node* NVLink, we have fine-grained pipelining thanks to the [120, 8] byte units.
 
-#### Selecting Protocol
+Pros: This way we can get to ~95% of peak bandwidth but with the advantages of flag-based synchronization/fine-grained pipelining within a node. 
+Cons: We have strict hardware requirements (atomic 128-byte writes enabled)
+
+## Selecting a Protocol
 
 - NCCL auto selects based on message size heuristics
 - Can also force using environment variable: `NCCL_PROTO=Simple ./my_app` or `NCCL_PROTO=LL128 ./my_app`.
