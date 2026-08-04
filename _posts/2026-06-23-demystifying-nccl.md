@@ -4,7 +4,12 @@ title: Demystifying NCCL
 math: true
 ---
 
-Starting a series of posts where I turn my existing notes on [NCCL](https://github.com/nvidia/nccl) into blog format. I'm relatively new to technical writing like this, so if you have feedback please feel free to shoot me an email at <u>willychan2022@gmail.com</u>.
+## Contents
+{: .no_toc }
+* TOC
+{:toc}
+
+I'm starting a series of posts where I turn my existing notes on [NCCL](https://github.com/nvidia/nccl) into blog format. I'm relatively new to technical writing like this, so if you have feedback please feel free to shoot me an email at <u>willychan2022@gmail.com</u>.
 
 This post is a blog-formatting of my notes on the [Demystifying NCCL paper](https://arxiv.org/abs/2507.04786), published by NVIDIA's networking team.
 
