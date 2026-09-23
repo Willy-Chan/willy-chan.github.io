@@ -6,6 +6,8 @@ link: https://www.together.ai/blog/parallelkernelbench
 recognition:
   - ICML 2026 Deep Learning 4 Code
 links:
+  - label: Talk
+    url: https://www.youtube.com/watch?v=pOvWgX7IJsc
   - label: GitHub
     url: https://github.com/togethercomputer/ParallelKernelBench
   - label: Blog post
@@ -14,8 +16,4 @@ links:
     url: https://huggingface.co/datasets/togethercomputer/ParallelKernelBench_Problems
   - label: Paper (alphaXiv)
     url: https://www.alphaxiv.org/abs/2606.parallel-kernel-bench
-  - label: Tweet 1 (Together)
-    url: https://x.com/togethercompute/status/2069515311720911082
-  - label: Tweet 2 (AI Engineer World's Fair Presentation)
-    url: https://x.com/togethercompute/status/2070196443197895073
 ---
